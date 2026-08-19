@@ -9,6 +9,7 @@ import {
   Put,
   Query,
   UseGuards,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { GenreService } from './genre.service';
 import { CreateGenreDto } from './dto/create-genre.dto';
@@ -18,7 +19,7 @@ import { JwtAuthGuard } from 'src/AuthModule/auth/guards/jwt-auth.guard';
 
 @Controller('genre')
 export class GenreController {
-  constructor(private readonly genreService: GenreService) {}
+  constructor(private readonly genreService: GenreService) { }
 
   @Post('post')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -60,8 +61,8 @@ export class GenreController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   async getAllGenre(
-    @Query('page') page: number,
-    @Query('limit') limit: number,
+    @Query('page', ParseIntPipe) page: number,
+    @Query('limit', ParseIntPipe) limit: number,
     @Query('search') search: string,
   ) {
     return await this.genreService.getAdmin(page, limit, search);

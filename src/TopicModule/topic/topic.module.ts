@@ -15,6 +15,9 @@ import { UserModule } from 'src/UserModule/user/user.module';
 import { JwtModule } from '@nestjs/jwt';
 import { LikeComment } from '../like_comment/entities/like_comment.entity';
 import { CommentModule } from '../comment/comment.module';
+import { MulterModule } from '@nestjs/platform-express';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { topicUploadConfig } from 'src/config/upload-photo-topic';
 
 @Module({
   controllers: [TopicController],
@@ -33,6 +36,11 @@ import { CommentModule } from '../comment/comment.module';
     UserModule,
     CommentModule,
     JwtModule,
+    MulterModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: topicUploadConfig,
+    }),
   ],
   exports: [TopicService],
 })

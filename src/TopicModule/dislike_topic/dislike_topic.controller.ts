@@ -8,6 +8,8 @@ import {
   Request,
   Get,
   Query,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { DislikeTopicService } from './dislike_topic.service';
 import { CreateDislikeTopicDto } from './dto/create-dislike_topic.dto';
@@ -20,12 +22,14 @@ export class DislikeTopicController {
   constructor(private readonly dislikeTopicService: DislikeTopicService) {}
 
   @Post('post')
+  @HttpCode(HttpStatus.CREATED)
   async create(@Body() data: CreateDislikeTopicDto, @Request() req) {
     data.id_user = req.user.userId;
     return await this.dislikeTopicService.createDislike(data);
   }
 
   @Delete('delete')
+  @HttpCode(HttpStatus.OK)
   async remove(@Body('id_topic') id_topic: string, @Request() req) {
     return await this.dislikeTopicService.deleteDislike(
       id_topic,
@@ -34,6 +38,7 @@ export class DislikeTopicController {
   }
 
   @Get('get-user-dislike')
+  @HttpCode(HttpStatus.OK)
   async getUserLikes(@Request() req, @Query('id_topic') id_topic: string) {
     return await this.dislikeTopicService.getUserDislike(req.user.userId, id_topic);
   }

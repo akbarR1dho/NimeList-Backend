@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CreateTopicDto } from './dto/create-topic.dto';
 import { UpdateTopicDto } from './dto/update-topic.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -19,8 +20,6 @@ import { v4 } from 'uuid';
 
 @Injectable()
 export class TopicService {
-  private imageStorage = process.env.IMAGE_STORAGE;
-
   constructor(
     @InjectRepository(Topic) private topicRepository: Repository<Topic>,
     @InjectRepository(PhotoTopic)
@@ -29,6 +28,7 @@ export class TopicService {
     private likeTopicRepository: Repository<LikeTopic>,
     @InjectRepository(DislikeTopic)
     private dislikeTopicRepository: Repository<DislikeTopic>,
+    private configService: ConfigService,
   ) {}
 
   // Fungsi untuk membuat topic
@@ -48,7 +48,11 @@ export class TopicService {
     if (!savedTopic) {
       if (photos) {
         for (const file of photos) {
-          unlink(file.path);
+          try {
+            await unlink(file.path);
+          } catch (err) {
+            console.error(`Failed to unlink file ${file.path}:`, err);
+          }
         }
       }
       throw new BadRequestException('Topic not created');
@@ -65,7 +69,7 @@ export class TopicService {
       }
     }
 
-    throw new HttpException('Topic created', 201);
+    return { message: 'data created', data: savedTopic };
   }
 
   // Fungsi untuk mengupdate topic
@@ -96,7 +100,11 @@ export class TopicService {
       if (photos) {
         for (const file of photos) {
           console.log(file);
-          unlink(file.path);
+          try {
+            await unlink(file.path);
+          } catch (err) {
+            console.error(`Failed to unlink file ${file.path}:`, err);
+          }
         }
       }
       throw new BadRequestException('Topic not updated');
@@ -109,8 +117,9 @@ export class TopicService {
       // Cek apakah existing_photos memberikan path yang tidak ada di dalam sistem
       if (!existing_photos.includes('images/' + photo.file_path)) {
         try {
-          unlink(`${this.imageStorage}/${photo.file_path}`); // Hapus file lama dari sistem
+          await unlink(`${this.configService.get<string>('IMAGE_STORAGE')}/${photo.file_path}`); // Hapus file lama dari sistem
         } catch (err) {
+          console.error(`Failed to unlink file ${photo.file_path}:`, err);
           throw new BadRequestException('photo not deleted');
         }
         await this.photoTopicRepository.remove(photo); // Hapus data foto lama dari database
@@ -130,7 +139,7 @@ export class TopicService {
         });
     }
 
-    throw new HttpException('Topic updated', 200);
+    return { message: 'data updated', data: savedTopic };
   }
 
   // Fungsi untuk melakukan cek sebelum update topic
@@ -163,7 +172,7 @@ export class TopicService {
 
     // Verifikasi apakah pengguna memiliki akses untuk melakukan delete
     if (role === 'user' && userId !== topic.id_user) {
-      throw new Error('you are not allowed to delete this data');
+      throw new ForbiddenException('you are not allowed to delete this data');
     }
 
     const deleted = await this.topicRepository.softDelete(id);
@@ -172,7 +181,7 @@ export class TopicService {
       throw new BadRequestException('Topic not deleted');
     }
 
-    throw new HttpException('Topic deleted successfully', 200);
+    return { message: 'data deleted', data: deleted };
   }
 
   // Fungsi untuk mendapatkan semua topic
@@ -203,19 +212,22 @@ export class TopicService {
       },
     });
 
-    return get.map((data) => ({
-      id: data.id,
-      title: data.title,
-      slug: data.slug,
-      created_at: data.created_at,
-      updated_at: data.updated_at,
-      likes: data.likes.length,
-      dislikes: data.dislikes.length,
-      user_name: data.user.name,
-      user_badge: data.user.badge,
-      user_username: data.user.username,
-      title_anime: data.anime.title,
-    }));
+    return {
+      message: 'data fetched',
+      data: get.map((data) => ({
+        id: data.id,
+        title: data.title,
+        slug: data.slug,
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+        likes: data.likes.length,
+        dislikes: data.dislikes.length,
+        user_name: data.user.name,
+        user_badge: data.user.badge,
+        user_username: data.user.username,
+        title_anime: data.anime.title,
+      })),
+    };
   }
 
   // Fungsi untuk mendapatkan topic berdasarkan slug
@@ -249,11 +261,14 @@ export class TopicService {
     });
 
     return {
-      ...get,
-      user: get.user.username,
-      anime: get.anime.title,
-      totalLikes: likes || 0,
-      totalDislikes: dislikes || 0,
+      message: 'data fetched',
+      data: {
+        ...get,
+        user: get.user.username,
+        anime: get.anime.title,
+        totalLikes: likes || 0,
+        totalDislikes: dislikes || 0,
+      },
     };
   }
 
@@ -288,8 +303,8 @@ export class TopicService {
     }));
 
     return {
-      data,
-      total,
+      message: 'data fetched',
+      data: { data, total },
     };
   }
 
@@ -310,8 +325,8 @@ export class TopicService {
     });
 
     return {
-      data: topics,
-      total,
+      message: 'data fetched',
+      data: { data: topics, total },
     };
   }
 
@@ -353,12 +368,15 @@ export class TopicService {
       .limit(15)
       .getRawMany();
 
-    return data.map((topic) => ({
-      id: topic.topic_id,
-      title: topic.topic_title,
-      created_at: topic.topic_created_at,
-      updated_at: topic.topic_updated_at,
-      slug: topic.topic_slug,
-    }));
+    return {
+      message: 'data fetched',
+      data: data.map((topic) => ({
+        id: topic.topic_id,
+        title: topic.topic_title,
+        created_at: topic.topic_created_at,
+        updated_at: topic.topic_updated_at,
+        slug: topic.topic_slug,
+      })),
+    };
   }
 }

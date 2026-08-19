@@ -25,8 +25,7 @@ import { nanoid } from 'nanoid';
 import { MidtransNotificationDto } from './dto/midtrans-notification.dto';
 import { parse } from 'path';
 
-// Untuk menyimpan token Midtrans sementara
-const tokenStore = new Map<string, string>();
+// tokenStore removed for database persistency
 
 @Injectable()
 export class TransactionService {
@@ -55,16 +54,19 @@ export class TransactionService {
     };
 
     const response = await fetch(url, options);
+
+    if (!response.ok) {
+      throw new Error(`Midtrans API Error: ${response.status} ${response.statusText}`);
+    }
+
     const { token } = await response.json();
 
-    // Simpan token ke dalam Map
-    tokenStore.set(data.transaction_details.order_id, token);
-
-    return { token };
+    return { message: 'token created', data: { token } };
   }
 
   async createMidtransToken(userId: string, membershipId: string) {
-    const user = await this.usersService.findById(userId);
+    const userResult = await this.usersService.findById(userId);
+    const user = userResult?.data;
     if (!user) {
       throw new HttpException('User not found', HttpStatus.BAD_REQUEST);
     }
@@ -75,7 +77,7 @@ export class TransactionService {
     }
 
     const orderId = `NL${nanoid(13)}`;
-    const amount = membership.price;
+    const amount = membership.data.price;
 
     // Transaksi detail
     const orderData = {
@@ -98,9 +100,21 @@ export class TransactionService {
 
     try {
       const data = await this.handleApiMidtrans(orderData);
-      return data;
+
+      // Buat transaksi pending dan simpan di database agar token_midtrans tidak hilang
+      const paymentData: CreateTransactionDto = {
+        order_id: orderId,
+        payment_platform: 'midtrans_snap',
+        total: amount,
+        id_user: userId,
+        id_premium: membershipId,
+        token_midtrans: data.data.token,
+      };
+      await this.createPayment(paymentData);
+
+      return { message: 'data fetched', data };
     } catch (error) {
-      throw new BadRequestException('Failed to create Midtrans token');
+      throw new BadRequestException('Failed to create Midtrans token: ' + error.message);
     }
   }
 
@@ -164,7 +178,7 @@ export class TransactionService {
       throw new BadRequestException('User not updated');
     }
 
-    return;
+    return { message: 'user updated' };
   }
 
   private async validCheckNotification(data: MidtransNotificationDto) {
@@ -177,7 +191,7 @@ export class TransactionService {
     }
 
     // Midtrans server key
-    const serverKey = process.env.MIDTRNAS_SERVER_KEY;
+    const serverKey = process.env.MIDTRANS_SERVER_KEY;
 
     // Format: order_id + status_code + gross_amount + server_key
     const input = `${order_id}${status_code}${gross_amount}${serverKey}`;
@@ -188,7 +202,9 @@ export class TransactionService {
       .update(input)
       .digest('hex');
 
-    return localSignature === signature_key;
+    // Constant-time comparison for security against timing attacks
+    if (localSignature.length !== signature_key.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(localSignature), Buffer.from(signature_key));
   }
 
   async handleNotification(notification: MidtransNotificationDto) {
@@ -200,25 +216,6 @@ export class TransactionService {
 
     if (!isValid) {
       throw new BadRequestException('Invalid notification data');
-    }
-
-    if (transaction_status === 'pending') {
-      const data: CreateTransactionDto = {
-        order_id: order_id,
-        payment_platform: notification.payment_type,
-        total: parseInt(notification.gross_amount),
-        id_user: notification.metadata.user_id,
-        id_premium: notification.metadata.premium_id,
-        token_midtrans: tokenStore.get(order_id),
-      };
-
-      if (notification.payment_type === 'bank_transfer') {
-        data.payment_platform = notification.va_numbers[0].bank;
-      }
-
-      await this.createPayment(data);
-
-      return;
     }
 
     // Ambil data transaksi berdasarkan order_id
@@ -243,10 +240,24 @@ export class TransactionService {
       throw new BadRequestException('Transaction already processed');
     }
 
+    if (transaction_status === 'pending') {
+      // Perbarui platform pembayaran jika informasi ada (dari midtrans)
+      if (notification.payment_type) {
+        transaction.payment_platform =
+          notification.payment_type === 'bank_transfer' &&
+          notification.va_numbers &&
+          notification.va_numbers[0]
+            ? notification.va_numbers[0].bank
+            : notification.payment_type;
+        await this.transactionsRepository.update({ order_id: order_id }, transaction);
+      }
+      return { message: 'Transaction pending' };
+    }
+
     // Cek status pembayaran dari Midtrans
     if (transaction_status === 'settlement' && fraud_status === 'accept') {
       // Update data transaksi
-      if (notification.payment_type === 'qris') {
+      if (notification.payment_type === 'qris' && notification.issuer) {
         transaction.payment_platform = notification.issuer;
       }
       transaction.status = status.SUCCESS;
@@ -256,9 +267,6 @@ export class TransactionService {
         { order_id: order_id },
         transaction,
       );
-
-      // Hapus token dari cache
-      tokenStore.delete(order_id);
 
       // Jika user id dan premium id tidak sesuai dengan data transaksi maka kembalikan error
       if (
@@ -271,7 +279,7 @@ export class TransactionService {
       // Lakukan update pada user
       await this.updateUser(transaction.id_user, transaction.id_premium);
 
-      throw new HttpException('Transaction success and user updated', 200);
+      return { message: 'Transaction success and user updated' };
     } else if (
       transaction_status === 'expire' ||
       transaction_status === 'cancel'
@@ -285,10 +293,7 @@ export class TransactionService {
         transaction,
       );
 
-      // Hapus token dari cache
-      tokenStore.delete(order_id);
-
-      throw new HttpException('Transaction expired or canceled', 200);
+      return { message: 'Transaction expired or canceled' };
     }
   }
 
@@ -353,8 +358,11 @@ export class TransactionService {
     }));
 
     return {
-      data: result,
-      total,
+      message: 'data fetched',
+      data: {
+        data: result,
+        total,
+      },
     };
   }
 
@@ -365,18 +373,21 @@ export class TransactionService {
       relations: ['user', 'premium'],
     });
 
-    return transactions.map((transaction) => ({
-      id: transaction.id,
-      order_id: transaction.order_id,
-      payment_platform: transaction.payment_platform,
-      username: transaction.user.username,
-      premium: transaction.premium.name,
-      status: transaction.status,
-      token_midtrans: transaction.token_midtrans,
-      total: transaction.total,
-      created_at: transaction.created_at,
-      updated_at: transaction.updated_at,
-    }));
+    return {
+      message: 'data fetched',
+      data: transactions.map((transaction) => ({
+        id: transaction.id,
+        order_id: transaction.order_id,
+        payment_platform: transaction.payment_platform,
+        username: transaction.user.username,
+        premium: transaction.premium.name,
+        status: transaction.status,
+        token_midtrans: transaction.token_midtrans,
+        total: transaction.total,
+        created_at: transaction.created_at,
+        updated_at: transaction.updated_at,
+      })),
+    };
   }
 
   async getTransactionByOrderId(order_id: string, user: any) {
@@ -390,15 +401,18 @@ export class TransactionService {
     }
 
     return {
-      order_id: transaction.order_id,
-      payment_platform: transaction.payment_platform,
-      username: transaction.user.username,
-      premium: transaction.premium,
-      status: transaction.status,
-      total: transaction.total,
-      token_midtrans: transaction.token_midtrans,
-      created_at: transaction.created_at,
-      updated_at: transaction.updated_at,
+      message: 'data fetched',
+      data: {
+        order_id: transaction.order_id,
+        payment_platform: transaction.payment_platform,
+        username: transaction.user.username,
+        premium: transaction.premium,
+        status: transaction.status,
+        total: transaction.total,
+        token_midtrans: transaction.token_midtrans,
+        created_at: transaction.created_at,
+        updated_at: transaction.updated_at,
+      },
     };
   }
 }

@@ -16,7 +16,7 @@ export class CreateAnimeDto {
   watch_link: string;
 
   @IsNotEmpty()
-  genres: [];
+  genres: string[];
 
   @IsNotEmpty()
   episodes: number;

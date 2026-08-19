@@ -17,19 +17,19 @@ import { JwtAuthGuard } from 'src/AuthModule/auth/guards/jwt-auth.guard';
 
 @Controller('favorite-anime')
 export class FavoriteAnimeController {
-  constructor(private readonly favoriteAnimeService: FavoriteAnimeService) {}
+  constructor(private readonly favoriteAnimeService: FavoriteAnimeService) { }
 
   @Post('post')
   @UseGuards(JwtAuthGuard)
   async create(@Request() req, @Body() data: CreateFavoriteAnimeDto) {
     data.id_user = req.user.userId;
-    return this.favoriteAnimeService.createFav(data);
+    return await this.favoriteAnimeService.createFav(data);
   }
 
   @Delete('delete')
   @UseGuards(JwtAuthGuard)
   async delete(@Request() req, @Body('id_anime') id_anime: string) {
-    return this.favoriteAnimeService.deleteFav(req.user.userId, id_anime);
+    return await this.favoriteAnimeService.deleteFav(req.user.userId, id_anime);
   }
 
   @Get('user-favorites')

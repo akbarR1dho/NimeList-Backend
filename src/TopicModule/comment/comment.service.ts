@@ -28,10 +28,10 @@ export class CommentService {
     const post = await this.commentRepository.save(data);
 
     if (!post) {
-      throw new Error('data not created');
+      throw new BadRequestException('data not created');
     }
 
-    throw new HttpException('data created', 201);
+    return { message: 'data created', data: post };
   }
 
   async updateComment(id: string, data: UpdateCommentDto) {
@@ -57,7 +57,7 @@ export class CommentService {
       throw new BadRequestException('data not updated');
     }
 
-    throw new HttpException('data updated', 200);
+    return { message: 'data updated' };
   }
 
   async deleteComment(id: string, user: any) {
@@ -93,7 +93,7 @@ export class CommentService {
       throw new BadRequestException('data not deleted');
     }
 
-    throw new HttpException('data deleted', 200);
+    return { message: 'data deleted' };
   }
 
   async getAllCommentAdmin(page: number, limit: number, search: string) {
@@ -122,8 +122,8 @@ export class CommentService {
     }));
 
     return {
-      data: result,
-      total,
+      message: 'data fetched',
+      data: { data: result, total },
     };
   }
 
@@ -137,7 +137,7 @@ export class CommentService {
       where: { id_topic: id },
       skip: (page - 1) * limit,
       take: limit,
-      relations: ['user', 'likes'],
+      relations: ['user', 'user.photo_profile', 'likes'],
       order: { created_at: 'DESC' },
       select: {
         id: true,
@@ -148,36 +148,37 @@ export class CommentService {
           username: true,
           name: true,
           id: true,
+          photo_profile: {
+            path_photo: true,
+          },
         },
       },
     });
 
-    const result = await Promise.all(
-      data.map(async (comment) => {
-        const liked = comment.likes.some((like) => like.id_user === id_user);
+    const result = data.map((comment) => {
+      const liked = comment.likes.some((like) => like.id_user === id_user);
 
-        // Panggil getPhoto secara asinkron
-        const user_photo = await this.photoProfileService.getPhoto(
-          comment.user.id,
-        );
+      const userPhotoRecord = comment.user.photo_profile && comment.user.photo_profile.length > 0
+        ? comment.user.photo_profile[0].path_photo
+        : 'Profile/default.jpg';
+      const user_photo = `images/${userPhotoRecord}`;
 
-        return {
-          id: comment.id,
-          created_at: comment.created_at,
-          updated_at: comment.updated_at,
-          comment: comment.comment,
-          name: comment.user.name,
-          username: comment.user.username,
-          total_likes: comment.likes.length,
-          user_photo,
-          liked, // Status apakah user telah menyukai komentar ini
-        };
-      }),
-    );
+      return {
+        id: comment.id,
+        created_at: comment.created_at,
+        updated_at: comment.updated_at,
+        comment: comment.comment,
+        name: comment.user.name,
+        username: comment.user.username,
+        total_likes: comment.likes.length,
+        user_photo,
+        liked, // Status apakah user telah menyukai komentar ini
+      };
+    });
 
     return {
-      data: result,
-      total,
+      message: 'data fetched',
+      data: { data: result, total },
     };
   }
 
@@ -194,12 +195,15 @@ export class CommentService {
       .getRawOne();
 
     return {
-      comment: get.comment_comment,
-      created_at: get.comment_created_at,
-      updated_at: get.comment_updated_at,
-      user: get.user_username,
-      topic: get.topic_title,
-      likes: get.total_likes,
+      message: 'data fetched',
+      data: {
+        comment: get.comment_comment,
+        created_at: get.comment_created_at,
+        updated_at: get.comment_updated_at,
+        user: get.user_username,
+        topic: get.topic_title,
+        likes: get.total_likes,
+      },
     };
   }
 }

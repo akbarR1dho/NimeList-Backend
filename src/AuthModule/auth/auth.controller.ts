@@ -1,6 +1,8 @@
 import {
   Body,
   Controller,
+  HttpCode,
+  HttpStatus,
   Post,
   Request,
   UseGuards,
@@ -17,6 +19,7 @@ export class AuthController {
 
   @UseGuards(LocalAuthGuard)
   @Post('login')
+  @HttpCode(HttpStatus.OK)
   async login(@Request() req) {
     return this.authService.login(req.user);
   }
@@ -28,6 +31,7 @@ export class AuthController {
   }
 
   @Post('refresh-token')
+  @HttpCode(HttpStatus.OK)
   async refreshAccessToken(@Body('token') token: string) {
     return this.authService.refreshToken(token);
   }

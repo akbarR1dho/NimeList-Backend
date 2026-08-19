@@ -16,57 +16,98 @@ export class AuthService {
   // Fungsi untuk validasi user
   async validateUser(email: string, password: string): Promise<any> {
     // Mencari user berdasarkan email
-    const user = await this.usersService.findOneByEmail(email);
+    const userResult = await this.usersService.findOneByEmail(email);
+    const user = userResult?.data;
 
-    if (user && (await bcrypt.compareSync(password, user.password))) {
-      const { password, ...result } = user;
+    if (user && (await bcrypt.compare(password, user.password))) {
+      const { password: _, ...result } = user;
       return result;
     }
 
-    throw new BadRequestException('Invalid password');
+    throw new BadRequestException('Invalid credentials');
   }
 
   // Fungsi untuk login
   async login(user: any) {
     const payload = {
-      username: user.username,
-      email: user.email,
       userId: user.id,
+      username: user.username,
       role: user.role,
+      email: user.email,
       name: user.name,
     };
 
-    throw new HttpException(this.generateToken(payload), 200);
+    const tokens = await this.getTokens(payload);
+    await this.usersService.updateRefreshToken(user.id, tokens.refresh_token);
+
+    return {
+      message: 'login successful',
+      data: tokens
+    };
   }
 
   // Fungsi untuk generate token
-  generateToken(user: any) {
-    const payload = {
-      userId: user.userId,
-      username: user.username,
-      role: user.role,
-      email: user.email,
-      name: user.name,
-    };
+  async getTokens(payload: any) {
+    const secret = this.configService.get<string>('JWT_SECRET');
+    const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET') || secret;
 
-    const access_token = this.jwtService.sign(payload);
+    const [access_token, refresh_token] = await Promise.all([
+      this.jwtService.signAsync(payload, {
+        secret: secret,
+        expiresIn: '20m',
+      }),
+      this.jwtService.signAsync(payload, {
+        secret: refreshSecret,
+        expiresIn: '7d',
+      }),
+    ]);
 
-    return { access_token };
+    return { access_token, refresh_token };
   }
 
   // Fungsi untuk refresh token
-  async refreshToken(token: string) {
-    const payload = this.jwtService.verify(token, {
-      secret: this.configService.get<string>('JWT_SECRET'),
-      ignoreExpiration: true,
-    });
+  async refreshToken(refreshToken: string) {
+    try {
+      const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET') || this.configService.get<string>('JWT_SECRET');
+      const decoded = this.jwtService.verify(refreshToken, {
+        secret: refreshSecret,
+      });
 
-    return this.generateToken(payload);
+      const userResult = await this.usersService.getUserWithRefreshToken(decoded.userId);
+      const user = userResult?.data;
+      
+      if (!user.refresh_token) {
+        throw new BadRequestException('Access Denied');
+      }
+
+      const isRefreshTokenMatching = await bcrypt.compare(refreshToken, user.refresh_token);
+      if (!isRefreshTokenMatching) {
+        throw new BadRequestException('Access Denied');
+      }
+
+      const payload = {
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        email: user.email,
+        name: user.name,
+      };
+
+      const tokens = await this.getTokens(payload);
+      await this.usersService.updateRefreshToken(user.id, tokens.refresh_token);
+
+      return {
+        message: 'token refreshed',
+        data: tokens
+      };
+    } catch (error) {
+      throw new BadRequestException('Invalid refresh token');
+    }
   }
 
   // Fungsi untuk register
   async register(user: CreateUserDto) {
     await this.usersService.create(user);
-    throw new HttpException('register successfully', 201);
+    return { message: 'register successfully' };
   }
 }

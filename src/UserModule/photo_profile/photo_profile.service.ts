@@ -11,7 +11,7 @@ export class PhotoProfileService {
   constructor(
     @InjectRepository(PhotoProfile)
     private photoProfileRepository: Repository<PhotoProfile>,
-  ) {}
+  ) { }
 
   async create(id_user: string, path: string) {
     const find = await this.photoProfileRepository.findOne({
@@ -28,6 +28,11 @@ export class PhotoProfileService {
 
       await this.photoProfileRepository.save(create);
     }
+
+    return {
+      message: "photo profile uploaded successfully",
+      data: path
+    }
   }
 
   async updatePhotoIfExist(
@@ -36,7 +41,7 @@ export class PhotoProfileService {
     photoOld?: string,
   ) {
     try {
-      unlink(`${this.imageStorage}/${photoOld}`);
+      await unlink(`${this.imageStorage}/${photoOld}`);
       await this.photoProfileRepository.update(
         { id_user: id_user },
         {
@@ -45,6 +50,11 @@ export class PhotoProfileService {
       );
     } catch (error) {
       throw new Error('Failed to update photo profile');
+    }
+
+    return {
+      message: "photo profile updated successfully",
+      data: photoNew
     }
   }
 
@@ -57,6 +67,9 @@ export class PhotoProfileService {
     // Pastikan selalu ada prefix 'images/'
     const photoPath = `images/${get?.path_photo || 'Profile/default.jpg'}`;
 
-    return photoPath;
+    return {
+      message: "photo profile fetched successfully",
+      data: photoPath
+    }
   }
 }

@@ -14,6 +14,9 @@ import { PhotoProfileModule } from '../photo_profile/photo_profile.module';
 import { JwtModule } from '@nestjs/jwt';
 import { Comment } from 'src/TopicModule/comment/entities/comment.entity';
 import { AuthModule } from 'src/AuthModule/auth/auth.module';
+import { MulterModule } from '@nestjs/platform-express';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { profileUploadConfig } from 'src/config/upload-photo-profile';
 
 @Module({
   controllers: [UserController],
@@ -32,6 +35,11 @@ import { AuthModule } from 'src/AuthModule/auth/auth.module';
     ]),
     PhotoProfileModule,
     JwtModule,
+    MulterModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: profileUploadConfig,
+    }),
   ],
   exports: [UserService],
 })

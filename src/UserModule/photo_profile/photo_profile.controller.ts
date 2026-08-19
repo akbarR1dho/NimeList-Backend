@@ -4,11 +4,11 @@ import { JwtAuthGuard } from 'src/AuthModule/auth/guards/jwt-auth.guard';
 
 @Controller('photo-profile')
 export class PhotoProfileController {
-  constructor(private readonly photoProfileService: PhotoProfileService) {}
+  constructor(private readonly photoProfileService: PhotoProfileService) { }
 
   @Get('get')
   @UseGuards(JwtAuthGuard)
   async getPhoto(@Request() req) {
-    return this.photoProfileService.getPhoto(req.user.userId);
+    return await this.photoProfileService.getPhoto(req.user.userId);
   }
 }

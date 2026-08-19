@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Request,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ReviewService } from './review.service';
 import { CreateReviewDto } from './dto/create-review.dto';
@@ -19,7 +20,7 @@ import { Roles } from 'src/AuthModule/common/decorators/roles.decorator';
 
 @Controller('review')
 export class ReviewController {
-  constructor(private readonly reviewService: ReviewService) {}
+  constructor(private readonly reviewService: ReviewService) { }
 
   @Post('post')
   @UseGuards(JwtAuthGuard)
@@ -55,8 +56,8 @@ export class ReviewController {
   @Get('get/by-anime/:id_anime')
   async getByAnime(
     @Param('id_anime') id_anime: string,
-    @Query('page') page: number,
-    @Query('limit') limit: number,
+    @Query('page', ParseIntPipe) page: number,
+    @Query('limit', ParseIntPipe) limit: number,
   ) {
     return await this.reviewService.getReviewByAnime(id_anime, page, limit);
   }
@@ -65,8 +66,8 @@ export class ReviewController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   async getAll(
-    @Query('page') page: number,
-    @Query('limit') limit: number,
+    @Query('page', ParseIntPipe) page: number,
+    @Query('limit', ParseIntPipe) limit: number,
     @Query('search') search: string,
   ) {
     return await this.reviewService.getAllReviewAdmin(page, limit, search);

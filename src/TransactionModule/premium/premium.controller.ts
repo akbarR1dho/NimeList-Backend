@@ -19,20 +19,20 @@ import { Roles } from 'src/AuthModule/common/decorators/roles.decorator';
 
 @Controller('premium')
 export class PremiumController {
-  constructor(private readonly premiumService: PremiumService) {}
+  constructor(private readonly premiumService: PremiumService) { }
 
   @Post('post')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  create(@Body() createPremiumDto: CreatePremiumDto) {
-    return this.premiumService.createPremium(createPremiumDto);
+  async create(@Body() createPremiumDto: CreatePremiumDto) {
+    return await this.premiumService.createPremium(createPremiumDto);
   }
 
   @Delete('delete/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   async deletePremium(@Param('id') id: string) {
-    return this.premiumService.deletePremium(id);
+    return await this.premiumService.deletePremium(id);
   }
 
   @Get('get/:id')
@@ -67,10 +67,10 @@ export class PremiumController {
   @Put('update/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  updatePremium(
+  async updatePremium(
     @Param('id') id: string,
     @Body() updatePremiumDto: UpdatePremiumDto,
   ) {
-    return this.premiumService.updatePremium(id, updatePremiumDto);
+    return await this.premiumService.updatePremium(id, updatePremiumDto);
   }
 }

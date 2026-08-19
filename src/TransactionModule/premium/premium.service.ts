@@ -20,12 +20,12 @@ export class PremiumService {
       throw new BadRequestException('data not created');
     }
 
-    throw new HttpException('data created', 201);
+    return { message: 'data created' };
   }
 
   async findById(id: string) {
     const premium = await this.premiumRepository.findOne({ where: { id } });
-    return premium;
+    return { message: 'data fetched', data: premium };
   }
 
   async getPremiumAdmin(
@@ -73,14 +73,15 @@ export class PremiumService {
       transactions: premium.transactions.length || 0,
     }));
 
-    return { data: result, total };
+    return { message: 'data fetched', data: { data: result, total } };
   }
 
   async getALl() {
-    return await this.premiumRepository.find({
+    const data = await this.premiumRepository.find({
       where: { status: status_premium.ACTIVE },
       order: { price: 'ASC' },
     });
+    return { message: 'data fetched', data };
   }
 
   async deletePremium(id: string) {
@@ -103,7 +104,7 @@ export class PremiumService {
       throw new BadRequestException('data not deleted');
     }
 
-    throw new HttpException('data deleted', 200);
+    return { message: 'data deleted' };
   }
 
   async getPremiumEdit(id: string) {
@@ -111,7 +112,7 @@ export class PremiumService {
       where: { id },
       select: ['id', 'name', 'price', 'duration', 'status', 'description'],
     });
-    return premium;
+    return { message: 'data fetched', data: premium };
   }
 
   async updatePremium(id: string, updatePremiumDto: UpdatePremiumDto) {
@@ -121,6 +122,6 @@ export class PremiumService {
       throw new BadRequestException('data not updated');
     }
 
-    throw new HttpException('data updated', 200);
+    return { message: 'data updated' };
   }
 }

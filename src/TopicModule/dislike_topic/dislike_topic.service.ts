@@ -37,10 +37,13 @@ export class DislikeTopicService {
     const saved = await this.dislikeTopicRepository.save(create);
 
     if (!saved) {
-      throw new HttpException('data not created', 400);
+      throw new BadRequestException('data not created');
     }
 
-    throw new HttpException('data created', 201);
+    return {
+      message: 'data created',
+      data: saved,
+    };
   }
 
   async deleteDislike(id_topic: string, id_user: string) {
@@ -54,12 +57,11 @@ export class DislikeTopicService {
     });
 
     if (!deleted) {
-      throw new HttpException('data not deleted', 400);
+      throw new BadRequestException('data not deleted');
     }
 
     // Tampilkan pesan data berhasil di hapus
     return {
-      status: 200,
       message: 'data deleted',
     };
   }
@@ -74,6 +76,6 @@ export class DislikeTopicService {
       select: { id: true },
     });
 
-    return find.length > 0 ? true : false;
+    return { message: 'data fetched', data: find.length > 0 ? true : false };
   }
 }

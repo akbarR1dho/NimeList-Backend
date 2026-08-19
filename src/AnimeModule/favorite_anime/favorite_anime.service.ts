@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   HttpException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { CreateFavoriteAnimeDto } from './dto/create-favorite_anime.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -26,7 +27,10 @@ export class FavoriteAnimeService {
 
     await this.favoriteAnimeRepository.save(create);
 
-    throw new HttpException('data created', 201);
+    return {
+      message: 'data created',
+      data: create,
+    };
   }
 
   // Fungsi untuk menghapus data favorite anime
@@ -35,6 +39,10 @@ export class FavoriteAnimeService {
       where: { id_anime: id_anime, id_user: id_user },
       select: ['id_user', 'id'],
     });
+
+    if (!get) {
+      throw new NotFoundException('Data tidak ditemukan');
+    }
 
     if (get.id_user !== id_user) {
       throw new ForbiddenException('you are not allowed to delete this data');
@@ -46,7 +54,7 @@ export class FavoriteAnimeService {
       throw new BadRequestException('data not deleted');
     }
 
-    throw new HttpException('data deleted', 200);
+    return { message: 'data deleted' };
   }
 
   // Fungsi untuk mengambil data favorite anime berdasarkan id user
@@ -55,19 +63,25 @@ export class FavoriteAnimeService {
       where: { id_user: id },
     });
 
-    return get.map((get) => get.id_anime);
+    return {
+      message: 'data fetched',
+      data: get.map((get) => get.id_anime),
+    };
   }
 
   // Fungsi untuk mengecek apakah user sudah menambahkan favorite anime
   async isFavorite(id_user: string, id_anime: string) {
     // Jika id_user atau id_anime tidak ada, maka return false
-    if (!id_user || !id_anime) return false;
+    if (!id_user || !id_anime) return { message: 'data fetched', data: false };
 
     const get = await this.favoriteAnimeRepository.findOne({
       where: { id_anime: id_anime, id_user: id_user },
       select: ['id_user', 'id', 'id_anime'],
     });
 
-    return !!get;
+    return {
+      message: 'data fetched',
+      data: !!get,
+    };
   }
 }

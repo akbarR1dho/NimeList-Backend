@@ -52,6 +52,12 @@ export class Anime {
   @Column('enum', { enum: Types })
   type: Types;
 
+  @Column('decimal', { precision: 3, scale: 1, default: 0 })
+  avg_rating: number;
+
+  @Column('integer', { default: 0 })
+  total_reviews: number;
+
   @CreateDateColumn()
   created_at: Date;
 

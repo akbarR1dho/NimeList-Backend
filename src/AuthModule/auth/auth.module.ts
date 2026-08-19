@@ -14,9 +14,11 @@ import { PremiumGuard } from './guards/isPremium.guard';
     PassportModule,
     UserModule,
     JwtModule.registerAsync({
-      useFactory: () => {
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
         return {
-          secret: process.env.JWT_SECRET,
+          secret: configService.get<string>('JWT_SECRET'),
           signOptions: { expiresIn: '20m' },
         };
       },

@@ -24,7 +24,10 @@ export class GenreService {
       throw new BadRequestException('data not created');
     }
 
-    throw new HttpException('data created', 201);
+    return {
+      message: 'data created',
+      data: saved,
+    };
   }
 
   // Fungsi untuk menghapus data genre berdasarkan id
@@ -36,7 +39,7 @@ export class GenreService {
       throw new BadRequestException('data not deleted');
     }
 
-    throw new HttpException('data deleted', 200);
+    return { message: 'data deleted' };
   }
 
   // Fungsi untuk mengupdate data genre
@@ -48,7 +51,7 @@ export class GenreService {
       throw new BadRequestException('data not updated');
     }
 
-    throw new HttpException('data updated', 200);
+    return { message: 'data updated' };
   }
 
   // Fungsi untuk mendapatkan data genre berdasarkan id
@@ -57,12 +60,13 @@ export class GenreService {
     if (!get) {
       throw new NotFoundException('data not found');
     }
-    return get;
+    return { message: 'data fetched', data: get };
   }
 
   // Fungsi untuk mendapatkan semua data genre
   async getAll() {
-    return await this.genreRepository.find();
+    const data = await this.genreRepository.find();
+    return { message: 'data fetched', data };
   }
 
   // Fungsi untuk mendapatkan semua data genre untuk admin
@@ -75,8 +79,8 @@ export class GenreService {
     });
 
     return {
-      data,
-      total,
+      message: 'data fetched',
+      data: { data, total },
     };
   }
 
@@ -91,6 +95,6 @@ export class GenreService {
       throw new NotFoundException('data not found');
     }
 
-    return get;
+    return { message: 'data fetched', data: get };
   }
 }

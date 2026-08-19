@@ -10,6 +10,8 @@ import {
   Get,
   Query,
   UseGuards,
+  ParseIntPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { AnimeService } from './anime.service';
 import { CreateAnimeDto } from './dto/create-anime.dto';
@@ -20,7 +22,6 @@ import { RolesGuard } from 'src/AuthModule/common/guards/roles.guard';
 import { Roles } from 'src/AuthModule/common/decorators/roles.decorator';
 import {
   animeFileFields,
-  animeUploadConfig,
 } from 'src/config/upload-photo-anime';
 
 @Controller('anime')
@@ -30,16 +31,19 @@ export class AnimeController {
   @Post('post')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  @UseInterceptors(FileFieldsInterceptor(animeFileFields, animeUploadConfig))
+  @UseInterceptors(FileFieldsInterceptor(animeFileFields))
   async create(
     @Body() createAnimeDto: CreateAnimeDto,
     @UploadedFiles()
     files: {
       photos_anime: Express.Multer.File[];
-      photo_cover: Express.Multer.File;
+      photo_cover: Express.Multer.File[];
     },
   ) {
-    return this.animeService.createAnime(
+    if (!files || !files.photo_cover || files.photo_cover.length === 0) {
+      throw new BadRequestException('photo_cover is required');
+    }
+    return await this.animeService.createAnime(
       createAnimeDto,
       files.photos_anime || [],
       files.photo_cover[0],
@@ -49,11 +53,11 @@ export class AnimeController {
   @Put('update/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
-  @UseInterceptors(FileFieldsInterceptor(animeFileFields, animeUploadConfig))
+  @UseInterceptors(FileFieldsInterceptor(animeFileFields))
   async updateAnimeDetails(
     @Param('id') animeId: string,
     @Body() updateAnimeDto: UpdateAnimeDto,
-    @Body('genres') genres: [],
+    @Body('genres') genres: string[],
     @Body('existing_photos') existingPhotosString: string[],
     @UploadedFiles()
     files: {
@@ -61,7 +65,7 @@ export class AnimeController {
       photo_cover: Express.Multer.File[];
     },
   ) {
-    const updatedAnime = await this.animeService.updateAnime(
+    return await this.animeService.updateAnime(
       animeId,
       updateAnimeDto,
       genres || [],
@@ -69,23 +73,21 @@ export class AnimeController {
       files.photo_cover?.[0] || null,
       existingPhotosString,
     );
-
-    return updatedAnime;
   }
 
   @Get('get-admin')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   async getAllAnimeAdmin(
-    @Query('page') page: number,
-    @Query('limit') limit: number,
+    @Query('page', ParseIntPipe) page: number,
+    @Query('limit', ParseIntPipe) limit: number,
     @Query('search') search: string,
   ) {
     return await this.animeService.getAllAnimeAdmin(page, limit, search);
   }
 
   @Get('get-newest')
-  async getAnimeNewest(@Query('limit') limit: number) {
+  async getAnimeNewest(@Query('limit', ParseIntPipe) limit: number) {
     return await this.animeService.getAnimeNewest(limit);
   }
 

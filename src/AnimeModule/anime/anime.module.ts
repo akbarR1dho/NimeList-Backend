@@ -12,6 +12,9 @@ import { AuthModule } from 'src/AuthModule/auth/auth.module';
 import { ReviewModule } from '../review/review.module';
 import { TopicModule } from 'src/TopicModule/topic/topic.module';
 import { GenreModule } from '../genre/genre.module';
+import { MulterModule } from '@nestjs/platform-express';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { animeUploadConfig } from 'src/config/upload-photo-anime';
 
 @Module({
   controllers: [AnimeController],
@@ -28,7 +31,12 @@ import { GenreModule } from '../genre/genre.module';
     AuthModule,
     ReviewModule,
     TopicModule,
-    GenreModule
+    GenreModule,
+    MulterModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: animeUploadConfig,
+    }),
   ],
 })
 export class AnimeModule {}

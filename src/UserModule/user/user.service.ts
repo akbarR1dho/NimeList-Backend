@@ -41,7 +41,7 @@ export class UserService {
     private topicRepository: Repository<Topic>,
     private readonly photoProfileService: PhotoProfileService,
     private readonly jwtService: JwtService,
-  ) {}
+  ) { }
   async create(createUserDto: CreateUserDto) {
     // Mencari role user
     const role = await this.roleRepository.findOneBy({ name: 'user' });
@@ -72,14 +72,33 @@ export class UserService {
       throw new ConflictException('Email already exists');
     }
 
-    // Simpan data user
-    const save = await this.userRepository.save(user);
+    return { message: 'data created' };
+  }
 
-    if (!save) {
-      throw new BadRequestException('User not created');
+  // Fungsi untuk update refresh token
+  async updateRefreshToken(id: string, refreshToken: string | null) {
+    if (refreshToken) {
+      refreshToken = await bcrypt.hash(refreshToken, 10);
+    }
+    await this.userRepository.update(id, { refresh_token: refreshToken });
+  }
+
+  // Mendapatkan user dengan refresh token
+  async getUserWithRefreshToken(id: string) {
+    const user = await this.userRepository.findOne({
+      where: { id },
+      select: ['id', 'username', 'email', 'refresh_token', 'name', 'role'],
+      relations: ['role'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
     }
 
-    return;
+    return {
+      message: "user fetched successfully",
+      data: user
+    };
   }
 
   // Mendapatkan semua user untuk admin
@@ -101,8 +120,8 @@ export class UserService {
     });
 
     return {
-      data,
-      total,
+      message: 'data fetched',
+      data: { data, total },
     };
   }
 
@@ -119,12 +138,8 @@ export class UserService {
     }
 
     return {
-      id: user.id,
-      username: user.username,
-      password: user.password,
-      email: user.email,
-      role: user.role.name,
-      name: user.name,
+      message: "user fetched successfully",
+      data: user
     };
   }
 
@@ -136,8 +151,8 @@ export class UserService {
     });
 
     return {
-      username: user.username,
-      email: user.email,
+      message: "user fetched successfully",
+      data: user
     };
   }
 
@@ -155,6 +170,8 @@ export class UserService {
         end_premium: null,
       },
     );
+
+    return { message: 'data updated' };
   }
 
   // Fungsi mendapatkan data user berdasarkan username untuk profile
@@ -163,14 +180,22 @@ export class UserService {
       where: { username: username },
       select: ['username', 'bio', 'badge', 'id', 'name'],
     });
-    const photo = await this.photoProfileService.getPhoto(data.id);
+
+    if (!data) {
+      throw new NotFoundException('User not found');
+    }
+
+    const photoResult = await this.photoProfileService.getPhoto(data.id);
 
     return {
-      username: data.username,
-      name: data.name,
-      photo_profile: photo,
-      bio: data.bio,
-      badge: data.badge,
+      message: 'data fetched',
+      data: {
+        username: data.username,
+        name: data.name,
+        photo_profile: photoResult.data,
+        bio: data.bio,
+        badge: data.badge,
+      },
     };
   }
 
@@ -197,16 +222,20 @@ export class UserService {
 
     const update = await this.userRepository.update({ id: id }, body);
 
+    if (!update) {
+      throw new BadRequestException('data not updated');
+    }
+
     if (
-      (update && body.username !== user.username) ||
-      body.name !== user.name
+      (body.username !== undefined && body.username !== user.username) ||
+      (body.name !== undefined && body.name !== user.name)
     ) {
       const payload = {
         userId: user.id,
-        username: body.username,
+        username: body.username ?? user.username,
         role: user.role.name,
         email: user.email,
-        name: body.name,
+        name: body.name ?? user.name,
       };
 
       const access_token = this.jwtService.sign(payload, {
@@ -214,14 +243,10 @@ export class UserService {
         expiresIn: '20m',
       });
 
-      return access_token;
+      return { message: 'data updated', data: { access_token } };
     }
 
-    if (!update) {
-      throw new BadRequestException('data not updated');
-    }
-
-    return;
+    return { message: 'data updated', data: null };
   }
 
   // Fungsi update profile
@@ -230,16 +255,15 @@ export class UserService {
     body: UpdateUserDto,
     photo: Express.Multer.File,
   ) {
-    const update = await this.updateUser(id, body);
+    const result = await this.updateUser(id, body);
 
     if (photo) {
       await this.photoProfileService.create(id, photo.filename);
     }
 
     return {
-      access_token: update || null,
       message: 'data updated',
-      status: 200,
+      data: (result as any)?.data ?? null,
     };
   }
 
@@ -250,11 +274,12 @@ export class UserService {
       select: ['password', 'id'],
     });
 
-    if (get.id !== id) {
-      throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
+    if (!get) {
+      throw new NotFoundException('User not found');
     }
 
-    if (!bcrypt.compare(password, get.password)) {
+    const isPasswordValid = await bcrypt.compare(password, get.password);
+    if (!isPasswordValid) {
       throw new BadRequestException('wrong password');
     }
 
@@ -264,7 +289,7 @@ export class UserService {
       throw new BadRequestException('data not deleted');
     }
 
-    throw new HttpException('data deleted', 200);
+    return { message: 'data deleted' };
   }
 
   // Fungsi mendapatkan detail user untuk admin
@@ -285,31 +310,27 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    const photo = await this.photoProfileService.getPhoto(user.id);
-    const totalReview = await this.reviewRepository.count({
-      where: { id_user: user.id },
-    });
-    const totalFav = await this.favoriteAnimeRepository.count({
-      where: { id_user: user.id },
-    });
-    const totalTopic = await this.topicRepository.count({
-      where: { id_user: user.id },
-    });
-    const totalComment = await this.commentRepository.count({
-      where: { id_user: user.id },
-    });
-    const totalTransaction = await this.transactionRepository.count({
-      where: { id_user: user.id },
-    });
+    const [photoResult, totalReview, totalFav, totalTopic, totalComment, totalTransaction] =
+      await Promise.all([
+        this.photoProfileService.getPhoto(user.id),
+        this.reviewRepository.count({ where: { id_user: user.id } }),
+        this.favoriteAnimeRepository.count({ where: { id_user: user.id } }),
+        this.topicRepository.count({ where: { id_user: user.id } }),
+        this.commentRepository.count({ where: { id_user: user.id } }),
+        this.transactionRepository.count({ where: { id_user: user.id } }),
+      ]);
 
     return {
-      ...user,
-      photo_profile: photo,
-      review_created: totalReview || 0,
-      favorite_anime: totalFav || 0,
-      topic_created: totalTopic || 0,
-      comment_created: totalComment || 0,
-      transaction_created: totalTransaction || 0,
+      message: 'data fetched',
+      data: {
+        ...user,
+        photo_profile: photoResult.data,
+        review_created: totalReview || 0,
+        favorite_anime: totalFav || 0,
+        topic_created: totalTopic || 0,
+        comment_created: totalComment || 0,
+        transaction_created: totalTransaction || 0,
+      },
     };
   }
 

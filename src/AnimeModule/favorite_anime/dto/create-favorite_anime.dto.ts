@@ -5,5 +5,6 @@ export class CreateFavoriteAnimeDto {
     id_anime: string
 
     @IsNotEmpty()
+    @IsString()
     id_user: string
 }

@@ -20,7 +20,6 @@ import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { UpdateUserDto } from './dto/update-user.dto';
 import {
   profileFileFields,
-  profileUploadConfig,
 } from 'src/config/upload-photo-profile';
 
 @Controller('user')
@@ -53,9 +52,7 @@ export class UserController {
 
   @Put('update-profile')
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(
-    FileFieldsInterceptor(profileFileFields, profileUploadConfig),
-  )
+  @UseInterceptors(FileFieldsInterceptor(profileFileFields))
   async updateProfile(
     @Request() req,
     @Body() body: UpdateUserDto,

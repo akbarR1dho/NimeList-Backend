@@ -1,8 +1,6 @@
 import {
   BadRequestException,
-  HttpException,
   Injectable,
-  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -15,11 +13,11 @@ import { In } from 'typeorm';
 import { unlink } from 'fs/promises';
 import { FavoriteAnime } from 'src/AnimeModule/favorite_anime/entities/favorite_anime.entity';
 import { UpdateAnimeDto } from './dto/update-anime.dto';
-import * as crypto from 'crypto';
 import { ReviewService } from '../review/review.service';
 import { TopicService } from 'src/TopicModule/topic/topic.service';
 import { GenreService } from '../genre/genre.service';
 import slugify from 'slugify';
+import { Review } from 'src/AnimeModule/review/entities/review.entity';
 
 @Injectable()
 export class AnimeService {
@@ -37,7 +35,7 @@ export class AnimeService {
     private readonly reviewService: ReviewService,
     private readonly topicService: TopicService,
     private readonly genreService: GenreService,
-  ) {}
+  ) { }
 
   async createAnime(
     createAnimeDto: CreateAnimeDto,
@@ -60,16 +58,19 @@ export class AnimeService {
       slug: slugify(title, { lower: true, strict: true }),
     });
 
-    const save = await this.animeRepository.save(anime);
-
-    if (!save) {
+    let save;
+    try {
+      save = await this.animeRepository.save(anime);
+    } catch (error) {
       if (files && files.length > 0) {
         for (const file of files) {
-          unlink(`${this.imageStorage}/${file.path}`);
+          try { await unlink(file.path); } catch (e) { }
         }
       }
-      unlink(`${this.imageStorage}/${photo_cover.path}`);
-      throw new BadRequestException('data not created');
+      if (photo_cover) {
+        try { await unlink(photo_cover.path); } catch (e) { }
+      }
+      throw new BadRequestException('data not created: ' + error.message);
     }
 
     // Simpan photo jika ada dan save data anime berhasil
@@ -83,14 +84,14 @@ export class AnimeService {
       }
     }
 
-    throw new HttpException('data created', 201);
+    return { message: 'data created', data: anime };
   }
 
   // Fungsi untuk Mengupdate Anime
   async updateAnime(
     animeId: string,
     updateAnimeDto: UpdateAnimeDto,
-    genres: [],
+    genres: string[],
     photo_anime: Express.Multer.File[],
     photo_cover: Express.Multer.File,
     existing_photos: string[],
@@ -147,11 +148,9 @@ export class AnimeService {
       // Cek apakah existing_photos memberikan path yang tidak ada di dalam sistem
       if (!existing_photos.includes('images/' + photo.file_path)) {
         try {
-          unlink(`${this.imageStorage}/${photo.file_path}`);
+          await unlink(`${this.imageStorage}/${photo.file_path}`);
         } catch (err) {
-          throw new InternalServerErrorException(
-            'Error hapus data file foto anime',
-          );
+          console.error('Error hapus data file foto anime:', err);
         }
 
         // Hapus foto dari database
@@ -172,7 +171,7 @@ export class AnimeService {
         });
     }
 
-    throw new HttpException('data updated', 200);
+    return { message: 'data updated', data: anime };
   }
 
   // Fungsi untuk Mendapatkan Anime berdasarkan slug
@@ -208,11 +207,8 @@ export class AnimeService {
     });
 
     return {
-      anime,
-      genres,
-      avgRating: getAvgRating,
-      topic,
-      totalFav,
+      message: 'data fetched',
+      data: { anime, genres, avgRating: getAvgRating, topic, totalFav },
     };
   }
 
@@ -229,7 +225,7 @@ export class AnimeService {
       throw new BadRequestException('data not deleted');
     }
 
-    throw new HttpException('data deleted', 200);
+    return { message: 'data deleted', data: { deleted, photoDeleted } };
   }
 
   // Fungsi untuk Mendapatkan semua Anime untuk admin dengan pagination
@@ -238,9 +234,8 @@ export class AnimeService {
     limit: number = 10,
     search: string = '',
   ) {
-    // Ambil semua data anime dan relasi review
+    // Ambil semua data anime
     const [animes, total] = await this.animeRepository.findAndCount({
-      relations: ['review'],
       where: {
         title: ILike(`%${search}%`),
       },
@@ -251,23 +246,7 @@ export class AnimeService {
       take: limit,
     });
 
-    // Hitung rata-rata rating untuk setiap anime
     const data = animes.map((anime) => {
-      // Menghitung rata-rata rating jika anime memiliki review
-      const avgRating =
-        anime.review.length > 0
-          ? Number(
-              parseFloat(
-                (
-                  anime.review.reduce(
-                    (total, review) => total + Number(review.rating),
-                    0,
-                  ) / anime.review.length
-                ).toString(),
-              ).toFixed(1),
-            )
-          : 0;
-
       return {
         id: anime.id,
         title: anime.title,
@@ -275,14 +254,13 @@ export class AnimeService {
         release_date: anime.release_date,
         updated_at: anime.updated_at,
         slug: anime.slug,
-        avg_rating: avgRating,
+        avg_rating: Number(anime.avg_rating),
       };
     });
 
     return {
-      data,
-      animes,
-      total,
+      message: 'data fetched',
+      data: { data, total, animes }
     };
   }
 
@@ -291,9 +269,7 @@ export class AnimeService {
     const animes = await this.animeRepository
       .createQueryBuilder('anime')
       .leftJoin('anime.photos', 'photo')
-      .leftJoin('anime.review', 'review') // Join table review
       .leftJoin('anime.genres', 'genre') // Join table genre
-      .addSelect('COALESCE(AVG(review.rating), 0)', 'averageRating')
       .addSelect('array_agg(distinct genre.name)', 'genres') // Aggregate genre names as an array
       .addSelect('array_agg(DISTINCT photo.file_path)', 'photos')
       .groupBy('anime.id')
@@ -309,19 +285,18 @@ export class AnimeService {
       trailer_link: anime.anime_trailer_link,
       type: anime.anime_type,
       slug: anime.anime_slug,
-      avgRating: parseFloat(anime.averageRating).toFixed(1),
+      avgRating: parseFloat(anime.anime_avg_rating).toFixed(1),
       genres: anime.genres,
       backdrop: 'images/' + anime.photos[0] || null,
     }));
 
-    return { data: result };
+    return { message: 'data fetched', data: result };
   }
 
   // Fungsi untuk Mendapatkan Anime Berdasarkan Genre
   async getAnimeByGenre(name: string) {
     const animes = await this.animeRepository
       .createQueryBuilder('anime')
-      .leftJoin('anime.review', 'review') // Join table review
       .leftJoin('anime.genres', 'genre') // Join table genre
       .select([
         'anime.id',
@@ -329,8 +304,8 @@ export class AnimeService {
         'anime.type',
         'anime.title',
         'anime.slug',
+        'anime.avg_rating',
       ])
-      .addSelect('COALESCE(AVG(review.rating), 0)', 'averageRating')
       .where('genre.name = :name', { name }) // Menyaring anime berdasarkan nama genre
       .groupBy('anime.id')
       .getRawMany();
@@ -343,14 +318,16 @@ export class AnimeService {
     }
 
     // Tampilkan anime yang ada
-    return animes.map((anime) => ({
+    const result = animes.map((anime) => ({
       id: anime.anime_id,
       photo_cover: 'images/' + anime.anime_photo_cover,
       type: anime.anime_type,
       title: anime.anime_title,
       slug: anime.anime_slug,
-      avgRating: parseFloat(anime.averageRating).toFixed(1),
+      avgRating: parseFloat(anime.anime_avg_rating).toFixed(1),
     }));
+
+    return { message: 'data fetched', data: result };
   }
 
   // Fungsi untuk Mendapatkan Anime Rekomendasi
@@ -394,101 +371,99 @@ export class AnimeService {
       .getRawMany();
 
     return recommendedAnimes.map((anime) => ({
-      id: anime.anime_id,
-      title: anime.anime_title,
-      photo_cover: 'images/' + anime.anime_photo_cover,
-      type: anime.anime_type,
-      slug: anime.anime_slug,
-      avgRating: parseFloat(anime.avg_rating).toFixed(1),
+      message: 'data fetched',
+      data: {
+        id: anime.anime_id,
+        title: anime.anime_title,
+        photo_cover: 'images/' + anime.anime_photo_cover,
+        type: anime.anime_type,
+        slug: anime.anime_slug,
+        avgRating: parseFloat(anime.avg_rating).toFixed(1),
+      },
     }));
   }
 
   // Fungsi untuk Mendapatkan Anime Populer dengan sistem weighted rating
   async getMostPopular() {
-    // Mencari semua data anime dan relasi review
-    const allAnimes = await this.animeRepository.find({
-      relations: ['review'],
-    });
+    const globalStats = await this.animeRepository
+      .createQueryBuilder('anime')
+      .select('SUM(anime.total_reviews)', 'totalReviews')
+      .addSelect(
+        'SUM(anime.total_reviews * anime.avg_rating) / NULLIF(SUM(anime.total_reviews), 0)',
+        'avgRatingAllAnime',
+      )
+      .getRawOne();
 
-    const totalRatings = allAnimes.reduce((sum, anime) => {
-      const animeTotalRating = anime.review.reduce(
-        (total, review) => total + Number(review.rating),
-        0,
-      );
-      return sum + animeTotalRating;
-    }, 0);
+    const totalReviewsGlobal = Number(globalStats?.totalReviews) || 0;
+    if (totalReviewsGlobal === 0) {
+      return { message: 'data fetched', data: [] };
+    }
 
-    const totalReviews = allAnimes.reduce(
-      (sum, anime) => sum + anime.review.length,
-      0,
-    );
-
-    const avgRatingAllAnime = totalRatings / totalReviews; // Rata-rata rating semua anime
-
-    // Jumlah minimum review yang diperlukan
+    const avgRatingAllAnime = Number(globalStats?.avgRatingAllAnime) || 0;
     const minReviews = 3;
 
-    // Hitung Weighted Rating (WR) untuk setiap anime
-    const data = allAnimes
+    const animeStats = await this.animeRepository
+      .createQueryBuilder('anime')
+      .select('anime.id', 'id')
+      .addSelect('anime.title', 'title')
+      .addSelect('anime.photo_cover', 'photo_cover')
+      .addSelect('anime.type', 'type')
+      .addSelect('anime.slug', 'slug')
+      .addSelect('anime.total_reviews', 'total_reviews')
+      .addSelect('anime.avg_rating', 'avg_rating')
+      .addSelect((subQuery) => {
+        return subQuery
+          .select('r.rating')
+          .from(Review, 'r')
+          .where('r.id_anime = anime.id')
+          .orderBy('r.created_at', 'DESC')
+          .limit(1);
+      }, 'latest_review_rating')
+      .where('anime.total_reviews >= :minReviews', { minReviews })
+      .getRawMany();
+
+    const data = animeStats
       .map((anime) => {
-        const totalReviews = anime.review.length;
-        const avgRatingAnime =
-          totalReviews > 0
-            ? anime.review.reduce(
-                (total, review) => total + Number(review.rating),
-                0,
-              ) / totalReviews
-            : 0;
+        const v = Number(anime.total_reviews);
+        const R = Number(anime.avg_rating);
+        const latestRating = Number(anime.latest_review_rating) || 0;
 
-        // Hanya hitung weighted rating untuk anime dengan jumlah review lebih atau sama dari minimum review
-        if (totalReviews >= minReviews) {
-          const weightedRating =
-            (totalReviews / (totalReviews + minReviews)) * avgRatingAnime +
-            (minReviews / (totalReviews + minReviews)) * avgRatingAllAnime;
+        const weightedRating =
+          (v / (v + minReviews)) * R +
+          (minReviews / (v + minReviews)) * avgRatingAllAnime;
 
-          // Ambil rating dari review terakhir (terbaru) berdasarkan tanggal createdAt
-          const latestReview = anime.review.reduce((latest, review) => {
-            const reviewDate = new Date(review.created_at); // Pastikan review memiliki createdAt
-            return reviewDate > new Date(latest.created_at) ? review : latest;
-          }, anime.review[0]); // Inisialisasi dengan review pertama
-
-          return {
-            title: anime.title,
-            id: anime.id,
-            photo_cover: 'images/' + anime.photo_cover,
-            type: anime.type,
-            slug: anime.slug,
-            total_reviews: totalReviews,
-            avgRating: avgRatingAnime.toFixed(1), // Rata-rata rating biasa
-            weighted_rating: weightedRating.toFixed(1), // Weighted Rating (WR)
-            latest_review_rating: Number(latestReview.rating), // Rating terakhir
-          };
-        }
-
-        return null; // Tidak memenuhi syarat
+        return {
+          title: anime.title,
+          id: anime.id,
+          photo_cover: 'images/' + anime.photo_cover,
+          type: anime.type,
+          slug: anime.slug,
+          total_reviews: v,
+          avgRating: R.toFixed(1),
+          weighted_rating: weightedRating.toFixed(1),
+          latest_review_rating: latestRating,
+        };
       })
-      .filter((anime) => anime !== null) // Hapus anime yang tidak memenuhi syarat
       .sort((a, b) => {
-        // Urutkan berdasarkan WR terlebih dahulu
         const weightedDifference =
           parseFloat(b.weighted_rating) - parseFloat(a.weighted_rating);
         if (weightedDifference !== 0) return weightedDifference;
 
-        // Jika WR sama, urutkan berdasarkan jumlah review (total_reviews) secara menurun
         const reviewDifference = b.total_reviews - a.total_reviews;
         if (reviewDifference !== 0) return reviewDifference;
 
-        // Jika jumlah review juga sama, urutkan berdasarkan avg_rating secara menurun
         const avgRatingDifference =
           parseFloat(b.avgRating) - parseFloat(a.avgRating);
         if (avgRatingDifference !== 0) return avgRatingDifference;
 
-        // Jika avg_rating juga sama, urutkan berdasarkan tanggal review terakhir (latest_review_date) secara menurun
         return b.latest_review_rating - a.latest_review_rating;
       })
-      .slice(0, 10); // Tampilkan 10 anime dengan WR tertinggi
+      .slice(0, 10);
 
     // Tampilkan hasil query
-    return data;
+    return {
+      message: 'data fetched',
+      data: data,
+    };
   }
 }

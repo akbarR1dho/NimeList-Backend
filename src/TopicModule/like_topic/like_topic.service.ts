@@ -38,13 +38,13 @@ export class LikeTopicService {
     const saved = await this.likeTopicRepository.save(create);
 
     if (!saved) {
-      throw new HttpException('data not created', 400);
+      throw new BadRequestException('data not created');
     }
 
     // Tampilkan pesan data berhasil dibuat
     return {
       message: 'data created',
-      status: 200,
+      data: saved,
     };
   }
 
@@ -59,13 +59,12 @@ export class LikeTopicService {
     });
 
     if (!deleted) {
-      throw new HttpException('data not deleted', 400);
+      throw new BadRequestException('data not deleted');
     }
 
     // Tampilkan pesan data berhasil di hapus
     return {
       message: 'data deleted',
-      status: 200,
     };
   }
 
@@ -79,6 +78,6 @@ export class LikeTopicService {
       select: { id: true },
     });
 
-    return find.length > 0 ? true : false;
+    return { message: 'data fetched', data: find.length > 0 ? true : false };
   }
 }

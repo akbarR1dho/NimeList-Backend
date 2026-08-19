@@ -11,6 +11,9 @@ import {
   Query,
   UseGuards,
   Request,
+  HttpCode,
+  HttpStatus,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { TopicService } from './topic.service';
 import { CreateTopicDto } from './dto/create-topic.dto';
@@ -23,7 +26,6 @@ import { PremiumGuard } from 'src/AuthModule/auth/guards/isPremium.guard';
 import { UpdateTopicDto } from './dto/update-topic.dto';
 import {
   topicFileFields,
-  topicUploadConfig,
 } from 'src/config/upload-photo-topic';
 
 @Controller('topic')
@@ -32,11 +34,10 @@ export class TopicController {
   constructor(private readonly topicService: TopicService) {}
 
   @Post('post')
+  @HttpCode(HttpStatus.CREATED)
   @UseGuards(RolesGuard)
   @Roles('user')
-  @UseInterceptors(
-    FileFieldsInterceptor(topicFileFields.photo, topicUploadConfig),
-  )
+  @UseInterceptors(FileFieldsInterceptor(topicFileFields.photo))
   async create(
     @Body() createTopicDto: CreateTopicDto,
     @UploadedFiles() files: { photos_topic: Express.Multer.File[] },
@@ -49,9 +50,8 @@ export class TopicController {
   }
 
   @Put('update/:id')
-  @UseInterceptors(
-    FileFieldsInterceptor(topicFileFields.news, topicUploadConfig),
-  )
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileFieldsInterceptor(topicFileFields.news))
   async update(
     @Param('id') id: string,
     @Request() req,
@@ -68,6 +68,7 @@ export class TopicController {
   }
 
   @Delete('delete/:id')
+  @HttpCode(HttpStatus.OK)
   async delete(@Param('id') id: string, @Request() req) {
     return await this.topicService.deleteTopic(
       id,
@@ -77,26 +78,30 @@ export class TopicController {
   }
 
   @Get('get-all')
+  @HttpCode(HttpStatus.OK)
   async getAll() {
     return await this.topicService.getAll();
   }
 
   @Get('get-topics-popular')
+  @HttpCode(HttpStatus.OK)
   async getTopicsPopular() {
     return await this.topicService.getTopicsPopular();
   }
 
   @Get('get/:slug')
+  @HttpCode(HttpStatus.OK)
   async getTopicById(@Param('slug') slug: string) {
     return await this.topicService.getTopicBySlug(slug);
   }
 
   @Get('get-admin')
+  @HttpCode(HttpStatus.OK)
   @UseGuards(RolesGuard)
   @Roles('admin')
   async getAllTopic(
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 10,
+    @Query('page', new ParseIntPipe({ optional: true })) page: number = 1,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit: number = 10,
     @Query('search') search: string = '',
   ) {
     return await this.topicService.getAllTopicAdmin(page, limit, search);

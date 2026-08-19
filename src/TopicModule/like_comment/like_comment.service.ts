@@ -36,7 +36,7 @@ export class LikeCommentService {
     }
 
     // Tampilkan pesan data berhasil dibuat
-    throw new HttpException('data created', 201);
+    return { message: 'data created', data: saved };
   }
 
   async deleteLike(id_comment: string, id_user: string) {
@@ -50,6 +50,6 @@ export class LikeCommentService {
       throw new BadRequestException('data not deleted');
     }
 
-    throw new HttpException('data deleted', 200);
+    return { message: 'data deleted', data: deleted };
   }
 }

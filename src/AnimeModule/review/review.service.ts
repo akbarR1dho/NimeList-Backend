@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ForbiddenException,
-  HttpException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,15 +10,30 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Review } from './entities/review.entity';
 import { Repository } from 'typeorm';
 import { Anime } from 'src/AnimeModule/anime/entities/anime.entity';
-import { User } from 'src/UserModule/user/entities/user.entity';
-import { PhotoProfileService } from 'src/UserModule/photo_profile/photo_profile.service';
 
 @Injectable()
 export class ReviewService {
   constructor(
     @InjectRepository(Review) private reviewRepository: Repository<Review>,
-    private readonly photoProfileService: PhotoProfileService,
-  ) {}
+    @InjectRepository(Anime) private animeRepository: Repository<Anime>,
+  ) { }
+
+  private async recalculateAnimeRating(id_anime: string) {
+    const stats = await this.reviewRepository
+      .createQueryBuilder('review')
+      .select('COUNT(review.id)', 'total_reviews')
+      .addSelect('AVG(CAST(review.rating AS DECIMAL))', 'avg_rating')
+      .where('review.id_anime = :id_anime', { id_anime })
+      .getRawOne();
+
+    const total_reviews = parseInt(stats.total_reviews) || 0;
+    const avg_rating = parseFloat(stats.avg_rating) || 0;
+
+    await this.animeRepository.update(id_anime, {
+      total_reviews,
+      avg_rating,
+    });
+  }
 
   // Fungsi untuk membuat review
   async createReview(data: CreateReviewDto) {
@@ -31,21 +45,28 @@ export class ReviewService {
       throw new BadRequestException('You have already reviewed this anime');
     }
 
-    const post = this.reviewRepository.save(data);
+    const post = await this.reviewRepository.save(data);
 
     if (!post) {
       throw new BadRequestException('data not created');
     }
 
-    throw new HttpException('data created', 201);
+    await this.recalculateAnimeRating(data.id_anime);
+
+    return { message: 'data created', data: post };
   }
 
   // Fungsi untuk mengupdate review
   async updateReview(id: string, data: UpdateReviewDto) {
     const review = await this.reviewRepository.findOne({
       where: { id: id },
-      select: ['id_user'],
+      select: ['id_user', 'id_anime'],
     });
+
+    if (!review) {
+      throw new NotFoundException('Data tidak ditemukan');
+    }
+
     const { id_user, role, ...update } = data;
 
     // Cek apakah user memiliki akses untuk mengupdate data
@@ -59,19 +80,25 @@ export class ReviewService {
       throw new BadRequestException('data not updated');
     }
 
-    throw new HttpException('data updated', 200);
+    await this.recalculateAnimeRating(review.id_anime);
+
+    return { message: 'data updated' };
   }
 
   // Fungsi untuk menghapus review
   async deleteReview(id: string, userId: string, role: string) {
     const review = await this.reviewRepository.findOne({
       where: { id: id },
-      select: ['id_user'],
+      select: ['id_user', 'id_anime'],
     });
+
+    if (!review) {
+      throw new NotFoundException('Data tidak ditemukan');
+    }
 
     // Cek apakah user memiliki akses untuk menghapus data
     if (role === 'user' && review.id_user !== userId) {
-      throw new Error('you are not allowed to delete this data');
+      throw new ForbiddenException('you are not allowed to delete this data');
     }
 
     const deleted = await this.reviewRepository.delete(id);
@@ -80,7 +107,9 @@ export class ReviewService {
       throw new BadRequestException('data not deleted');
     }
 
-    throw new HttpException('data deleted', 200);
+    await this.recalculateAnimeRating(review.id_anime);
+
+    return { message: 'data deleted' };
   }
 
   // Fungsi untuk mendapatkan semua review untuk admin dengan pagination
@@ -123,8 +152,8 @@ export class ReviewService {
     }));
 
     return {
-      data: result,
-      total,
+      message: 'data fetched',
+      data: { data: result, total },
     };
   }
 
@@ -151,12 +180,15 @@ export class ReviewService {
     console.log(review);
 
     return {
-      username: review.user.username,
-      review: review.review,
-      title_anime: review.anime.title,
-      rating: review.rating,
-      created_at: review.created_at,
-      updated_at: review.updated_at,
+      message: 'data fetched',
+      data: {
+        username: review.user.username,
+        review: review.review,
+        title_anime: review.anime.title,
+        rating: review.rating,
+        created_at: review.created_at,
+        updated_at: review.updated_at,
+      },
     };
   }
 
@@ -172,13 +204,13 @@ export class ReviewService {
       },
     });
 
-    return anime.map((anime) => anime.anime.id);
+    return { message: 'data fetched', data: anime.map((anime) => anime.anime.id) };
   }
 
   async getReviewByAnime(id_anime: string, page: number, limit: number) {
     const get = await this.reviewRepository.find({
       where: { id_anime: id_anime },
-      relations: ['user'],
+      relations: ['user', 'user.photo_profile'],
       skip: (page - 1) * limit,
       take: limit,
       select: {
@@ -190,6 +222,9 @@ export class ReviewService {
           name: true,
           id: true,
           status_premium: true,
+          photo_profile: {
+            path_photo: true,
+          },
         },
         created_at: true,
         updated_at: true,
@@ -201,29 +236,28 @@ export class ReviewService {
       where: { id_anime: id_anime },
     });
 
-    const result = await Promise.all(
-      get.map(async (review) => {
-        const user_photo = await this.photoProfileService.getPhoto(
-          review.user.id,
-        );
+    const result = get.map((review) => {
+      const userPhotoRecord = review.user.photo_profile && review.user.photo_profile.length > 0
+        ? review.user.photo_profile[0].path_photo
+        : 'Profile/default.jpg';
+      const user_photo = `images/${userPhotoRecord}`;
 
-        return {
-          id: review.id,
-          username: review.user.username,
-          name: review.user.name,
-          status_premium: review.user.status_premium,
-          rating: parseFloat(review.rating.toString()),
-          review: review.review,
-          created_at: review.created_at,
-          updated_at: review.updated_at,
-          user_photo,
-        };
-      }),
-    );
+      return {
+        id: review.id,
+        username: review.user.username,
+        name: review.user.name,
+        status_premium: review.user.status_premium,
+        rating: parseFloat(review.rating.toString()),
+        review: review.review,
+        created_at: review.created_at,
+        updated_at: review.updated_at,
+        user_photo,
+      };
+    });
 
     return {
-      data: result,
-      total,
+      message: 'data fetched',
+      data: { data: result, total },
     };
   }
 
@@ -233,9 +267,9 @@ export class ReviewService {
       id_anime: id,
     });
 
-    if (!review) return 0;
+    if (!review) return { message: 'data fetched', data: 0 };
 
-    return Number(parseFloat(review.toString()).toFixed(1));
+    return { message: 'data fetched', data: Number(parseFloat(review.toString()).toFixed(1)) };
   }
 
   // Fungsi untuk mendapatkan daftar review berdasarkan id anime
@@ -259,17 +293,20 @@ export class ReviewService {
     });
 
     return {
-      data: reviews.map((review) => ({
-        id: review.id,
-        username: review.user.username,
-        name: review.user.name,
-        review: review.review,
-        rating: parseFloat(review.rating.toString()),
-        status_premium: review.user.status_premium,
-        created_at: review.created_at,
-        updated_at: review.updated_at,
-      })),
-      total,
+      message: 'data fetched',
+      data: {
+        data: reviews.map((review) => ({
+          id: review.id,
+          username: review.user.username,
+          name: review.user.name,
+          review: review.review,
+          rating: parseFloat(review.rating.toString()),
+          status_premium: review.user.status_premium,
+          created_at: review.created_at,
+          updated_at: review.updated_at,
+        })),
+        total,
+      },
     };
   }
 
@@ -280,8 +317,8 @@ export class ReviewService {
       select: ['rating'],
     });
 
-    if (!rating) return 0;
+    if (!rating) return { message: 'data fetched', data: 0 };
 
-    return Number(rating.rating);
+    return { message: 'data fetched', data: Number(rating.rating) };
   }
 }
